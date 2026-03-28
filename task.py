@@ -1,0 +1,117 @@
+"""
+task.py — LegacyCodeArcheologist
+Task registry: 3 deterministic tasks of increasing difficulty.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+# ---------------------------------------------------------------------------
+# Task registry
+# Each entry describes one episode configuration.
+# ---------------------------------------------------------------------------
+
+TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
+
+    # -----------------------------------------------------------------------
+    # Task 1 — EASY
+    # A FastAPI route has a SyntaxError (missing colon on function def).
+    # The agent must: ReadFile → EditCode (fix it) → CallAPI → 200 OK.
+    # -----------------------------------------------------------------------
+    "task_1_syntax_error": {
+        "id":          "task_1_syntax_error",
+        "difficulty":  "easy",
+        "description": (
+            "A FastAPI route in main.py has a SyntaxError. "
+            "Read the file, fix the Python syntax, and verify "
+            "the /health endpoint returns HTTP 200."
+        ),
+        "template_files": ["main.py"],
+        "success_criteria": {
+            "endpoint":     "/health",
+            "method":       "GET",
+            "expected_status": 200,
+        },
+        "max_steps": 15,
+        "reward_shaping": {
+            "read_file":     0.05,   # first read
+            "edit_applied":  0.10,   # any edit
+            "server_alive":  0.20,   # server restarted without crash
+            "status_200":    1.00,   # terminal success
+        },
+        "hint": "Look for a missing ':' on a function definition line.",
+    },
+
+    # -----------------------------------------------------------------------
+    # Task 2 — MEDIUM
+    # The /process endpoint requires an 'X-Internal-Token' header.
+    # Token is documented only in README.txt. Agent must read README,
+    # then call the API with the correct header and validate JSON body.
+    # -----------------------------------------------------------------------
+    "task_2_auth_header": {
+        "id":          "task_2_auth_header",
+        "difficulty":  "medium",
+        "description": (
+            "The /process endpoint is returning 401 Unauthorized. "
+            "Read README.txt to discover the required authentication header, "
+            "then call the endpoint with the correct 'X-Internal-Token' header "
+            "and confirm the JSON response contains {'status': 'ok'}."
+        ),
+        "template_files": ["main.py"],
+        "success_criteria": {
+            "endpoint":           "/process",
+            "method":             "POST",
+            "required_header_key": "X-Internal-Token",
+            "expected_json_key":  "status",
+            "expected_json_value": "ok",
+        },
+        "max_steps": 20,
+        "reward_shaping": {
+            "readme_read":       0.10,   # agent reads README
+            "header_present":    0.20,   # correct header sent
+            "status_200":        0.30,   # HTTP 200
+            "json_validated":    1.00,   # terminal: JSON body correct
+        },
+        "hint": "The token is documented in README.txt under 'Internal Auth'.",
+    },
+
+    # -----------------------------------------------------------------------
+    # Task 3 — HARD
+    # The /compute endpoint has a time.sleep(2) bottleneck.
+    # Agent must locate, remove it, and verify latency < 100 ms.
+    # Score is continuous: 1.0 if <100 ms, partial if <500 ms.
+    # -----------------------------------------------------------------------
+    "task_3_perf_optimization": {
+        "id":          "task_3_perf_optimization",
+        "difficulty":  "hard",
+        "description": (
+            "The /compute endpoint is unacceptably slow (>2 s). "
+            "Profile the code by reading main.py, remove the artificial "
+            "bottleneck (time.sleep), redeploy, and verify that the endpoint "
+            "responds in under 100 ms."
+        ),
+        "template_files": ["main.py"],
+        "success_criteria": {
+            "endpoint":        "/compute",
+            "method":          "GET",
+            "latency_target_ms": 100,
+        },
+        "max_steps": 25,
+        "reward_shaping": {
+            "bottleneck_found":   0.10,   # agent reads and identifies sleep
+            "sleep_removed":      0.20,   # file edited (sleep line gone)
+            "latency_lt_500ms":   0.40,   # partial credit
+            "latency_lt_100ms":   1.00,   # terminal success
+        },
+        "hint": "Search for 'time.sleep' inside main.py.",
+    },
+}
+
+
+def get_task(task_id: str) -> Dict[str, Any]:
+    if task_id not in TASK_REGISTRY:
+        raise KeyError(
+            f"Task '{task_id}' not found. Available: {list(TASK_REGISTRY.keys())}"
+        )
+    return TASK_REGISTRY[task_id]
