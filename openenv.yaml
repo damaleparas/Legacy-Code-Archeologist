@@ -1,0 +1,83 @@
+# openenv.yaml — LegacyCodeArcheologist environment manifest
+# Compatible with: openenv validate / openenv push
+# Spec: openenv-core v0.1.x
+
+name: legacy_code_archeologist
+version: "1.0.0"
+description: >
+  A Software Archeology sandbox where an AI agent debugs, documents,
+  and refactors messy legacy FastAPI code to restore system functionality.
+  Covers syntax repair, hidden-auth discovery, and performance optimisation.
+
+author: "LCA Contributors"
+license: MIT
+tags:
+  - code-repair
+  - debugging
+  - software-engineering
+  - reinforcement-learning
+  - fastapi
+
+# ── Environment server ────────────────────────────────────────────────────────
+server:
+  entrypoint: "python server.py"
+  port: 5000
+  health_check: "GET /health"
+  startup_timeout_seconds: 15
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+docker:
+  image: "lca-env:latest"
+  dockerfile: "Dockerfile"
+  build_args: {}
+
+# ── Tasks ─────────────────────────────────────────────────────────────────────
+tasks:
+  - id: task_1_syntax_error
+    difficulty: easy
+    max_steps: 15
+    description: "Fix a SyntaxError in a FastAPI route and verify /health returns HTTP 200."
+
+  - id: task_2_auth_header
+    difficulty: medium
+    max_steps: 20
+    description: "Discover the X-Internal-Token from README.txt and call /process successfully."
+
+  - id: task_3_perf_optimization
+    difficulty: hard
+    max_steps: 25
+    description: "Remove time.sleep() bottleneck; verify /compute latency < 100 ms."
+
+# ── Action space ──────────────────────────────────────────────────────────────
+action_space:
+  - ReadFile:  { path: string }
+  - EditCode:  { path: string, patch: string }
+  - RunTest:   { command: string }
+  - CallAPI:   { url: string, method: string, headers: object, payload: object }
+
+# ── Observation space ─────────────────────────────────────────────────────────
+observation_space:
+  file_content:   string
+  stdout:         string
+  api_response:   object | null
+  latency:        float
+  status_code:    int | null
+  error:          string
+  step_count:     int
+  files_modified: list[string]
+
+# ── Reward range ──────────────────────────────────────────────────────────────
+reward:
+  min: -0.10
+  max:  1.50    # base 1.0 + continuous bonus on task 3
+  terminal_reward: 1.00
+
+# ── Evaluation ────────────────────────────────────────────────────────────────
+evaluation:
+  metrics:
+    - name: success_rate
+      description: "Fraction of episodes where task is solved within max_steps."
+    - name: steps_to_solve
+      description: "Mean step count for successful episodes."
+    - name: cumulative_reward
+      description: "Total reward accumulated over the episode."
