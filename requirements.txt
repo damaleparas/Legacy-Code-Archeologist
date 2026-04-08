@@ -3,6 +3,8 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 requests>=2.31.0
 httpx>=0.27.0           # async HTTP used by tests / future agents
+openai>=1.0.0
+
 
 # ── RL / Training ────────────────────────────────────────────────────────────
 gymnasium>=0.29.1       # optional: wrap env as a Gym env for SB3 / RLlib
