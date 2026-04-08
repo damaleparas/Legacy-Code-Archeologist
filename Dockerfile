@@ -22,14 +22,21 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Application source ───────────────────────────────────────────────────────
+COPY pyproject.toml      ./
+COPY uv.lock            ./
+COPY README.md          ./
+COPY LICENSE            ./
 COPY models.py          ./
 COPY env.py             ./
 COPY task.py            ./
 COPY grader.py          ./
 COPY server.py          ./
+COPY server/            ./server/
 COPY legacy_templates/  ./legacy_templates/
 COPY tests/             ./tests/
 COPY scripts/           ./scripts/
+
+
 
 # ── Generate templates (idempotent) ─────────────────────────────────────────
 RUN python scripts/generate_templates.py
@@ -39,16 +46,10 @@ RUN pytest tests/ -x -q --timeout=30 \
  && echo "✓ All tests passed"
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
-EXPOSE 5000
+EXPOSE 7860
 
 # Health check: the OpenEnv server's /health endpoint
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:5000/health || exit 1
+    CMD curl -f http://localhost:7860/health || exit 1
 
-ENTRYPOINT ["python", "server.py", "--host", "0.0.0.0", "--port", "5000"]
-CMD []
-
-
-# ── Dev / test-only target ────────────────────────────────────────────────────
-FROM base AS test
-CMD ["pytest", "tests/", "-v", "--timeout=60"]
+CMD ["python", "server.py", "--host", "0.0.0.0", "--port", "7860"]

@@ -20,8 +20,9 @@ tags:
 
 # ── Environment server ────────────────────────────────────────────────────────
 server:
-  entrypoint: "python server.py"
-  port: 5000
+  entrypoint: "server"
+
+  port: 7860
   health_check: "GET /health"
   startup_timeout_seconds: 15
 

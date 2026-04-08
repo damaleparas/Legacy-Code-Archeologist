@@ -130,7 +130,8 @@ def main():
     parser = argparse.ArgumentParser(description="OpenEnv server for LegacyCodeArcheologist")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--host", default="0.0.0.0")
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
+
 
     server = HTTPServer((args.host, args.port), EnvHandler)
     log.info(f"OpenEnv server listening on {args.host}:{args.port}")
