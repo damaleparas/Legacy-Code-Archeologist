@@ -49,12 +49,8 @@ tasks:
     max_steps: 25
     description: "Remove time.sleep() bottleneck; verify /compute latency < 100 ms."
 
-  - id: task_4_db_schema_mismatch
-    difficulty: hard
-    max_steps: 25
-    description: "Inspect SQLite schema for renamed columns and update the FastAPI query accordingly."
-
 # ── Action space ──────────────────────────────────────────────────────────────
+
 action_space:
   - ReadFile:  { path: string }
   - EditCode:  { path: string, patch: string }

@@ -228,13 +228,14 @@ async def main() -> None:
                 break
 
         score = sum(rewards)
-        # Final scores are clamped/processed by the evaluator, but we provide the raw sum
+        # Ensure score falls strictly inside (0.0, 1.0) because the evaluator restricts scores
+        score = min(max(score, 0.01), 0.99)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     except Exception as e:
         sys.stderr.write(f"Inference error: {e}\n")
     finally:
-        log_end(success=success, steps=steps_taken, score=score if score > 0 else 0.0, rewards=rewards)
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
 if __name__ == "__main__":
