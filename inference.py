@@ -28,8 +28,12 @@ STDOUT FORMAT
 import asyncio
 import json
 import os
+import sys
 import textwrap
 from typing import List, Optional
+
+# Force stdout to be unbuffered
+sys.stdout.reconfigure(line_buffering=True)
 
 from openai import OpenAI
 
@@ -44,7 +48,6 @@ try:
         LegacyCodeArcheologistCallApiAction
     )
 except ImportError:
-    print("[DEBUG] Could not import legacy_code_archeologist package, this is expected if testing locally without openenv generate")
     LegacyCodeArcheologistEnv = None
     LegacyCodeArcheologistAction = None
 
@@ -79,21 +82,24 @@ SYSTEM_PROMPT = textwrap.dedent(
 
 
 def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
+    line = f"[START] task={task} env={env} model={model}\n"
+    sys.stdout.write(line)
+    sys.stdout.flush()
 
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
-    print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
-        flush=True,
-    )
+    line = f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}\n"
+    sys.stdout.write(line)
+    sys.stdout.flush()
 
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+    line = f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}\n"
+    sys.stdout.write(line)
+    sys.stdout.flush()
 
 
 def build_user_prompt(step: int, obs: dict, last_reward: float, history: List[str]) -> str:
@@ -137,12 +143,12 @@ def parse_action(json_text: str):
             "action_type": action_type,
             **{k:v for k,v in data.items() if k != "action_type"}
         })
-    except Exception as e:
+    except Exception:
         # Default action on parse failure to keep moving
         try:
              return LegacyCodeArcheologistAction(run_test=LegacyCodeArcheologistRunTestAction(command="echo 'Invalid JSON'"))
         except:
-             return None # allow failure
+             return None
 
 
 def get_model_action_json(client: OpenAI, step: int, obs: dict, last_reward: float, history: List[str]) -> str:
@@ -167,24 +173,13 @@ def get_model_action_json(client: OpenAI, step: int, obs: dict, last_reward: flo
         if text.endswith("```"):
             text = text[:-3]
         return text.strip()
-    except Exception as exc:
-        print(f"[DEBUG] Model request failed: {exc}", flush=True)
+    except Exception:
         return '{"action_type": "RunTest", "command": "echo Model request failed"}'
 
 
 async def main() -> None:
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-
-    # Initialize env
-    try:
-        env = await LegacyCodeArcheologistEnv.from_docker_image(IMAGE_NAME)
-    except Exception as e:
-        print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
-        log_end(success=False, steps=0, score=0.0, rewards=[])
-        return
-
-
+    
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
@@ -192,9 +187,12 @@ async def main() -> None:
     success = False
 
     try:
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        # Initialize env
+        env = await LegacyCodeArcheologistEnv.from_docker_image(IMAGE_NAME)
 
         result = await env.reset()
-        obs = vars(result.observation) # Convert observation object to dict for easy handling
+        obs = vars(result.observation)
         last_reward = 0.0
 
         max_steps = getattr(env, "max_steps", MAX_STEPS)
@@ -209,8 +207,6 @@ async def main() -> None:
             action = parse_action(action_json)
 
             if not action:
-                # Local fallback if client action generation failed
-                print(f"[DEBUG] Client action parsing failed completely. Yielding.")
                 action_str = f"Parse failed: {action_json}"
                 log_step(step=step, action=action_str, reward=0.0, done=False, error="Action parsing failed")
                 continue
@@ -221,8 +217,6 @@ async def main() -> None:
                 reward = result.reward or 0.0
                 done = result.done
                 error = obs.get("error")
-                
-                # Format an action string for logging
                 action_str = json.dumps(json.loads(action_json))
 
             except Exception as e:
@@ -234,32 +228,25 @@ async def main() -> None:
             rewards.append(reward)
             steps_taken = step
             last_reward = reward
-
             log_step(step=step, action=action_str, reward=reward, done=done, error=error)
-
             history.append(f"Step {step}: {action_str} -> reward {reward:+.2f}")
 
             if done:
                 break
 
-        # Calculate final score based on cumulative reward vs expected max
         score = sum(rewards)
-        score = min(max(score, 0.0), 1.0)  # clamp to [0, 1] for submission standards if needed
+        score = min(max(score, 0.0), 1.0)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
+    except Exception as e:
+        sys.stderr.write(f"Inference error: {e}\n")
     finally:
-        try:
-            await env.close()
-        except Exception as e:
-            print(f"[DEBUG] env.close() error (container cleanup): {e}", flush=True)
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
 if __name__ == "__main__":
     if LegacyCodeArcheologistEnv is None:
         log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-        print("[DEBUG] Could not import legacy_code_archeologist package.", flush=True)
         log_end(success=False, steps=0, score=0.0, rewards=[])
     else:
         asyncio.run(main())
-
