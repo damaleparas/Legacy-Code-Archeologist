@@ -15,11 +15,12 @@ from task import TASK_REGISTRY
 # ---------------------------------------------------------------------------
 # Reward constants (shared with env.py — kept here for grader autonomy)
 # ---------------------------------------------------------------------------
-R_TASK_COMPLETE   =  1.00
-R_PARTIAL_CREDIT  =  0.30
-R_STEP_PROGRESS   =  0.10
-R_INVALID_ACTION  = -0.02
+R_TASK_COMPLETE   =  0.30
+R_PARTIAL_CREDIT  =  0.15
+R_STEP_PROGRESS   =  0.05
+R_INVALID_ACTION  = -0.01
 R_INVALID_SYNTAX  = -0.05
+
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +224,7 @@ class Task3Grader(BaseGrader):
                 if not self._flagged(state, "task_done"):
                     # Continuous score component
                     continuous = max(0.0, 1.0 - latency_ms / self.LATENCY_FULL_MS)
-                    reward += R_TASK_COMPLETE + continuous * 0.5
+                    reward += R_TASK_COMPLETE + (continuous * 0.20)
                     done    = True
                     self._flag(state, "task_done")
                     message += f" *** TASK COMPLETE +{R_TASK_COMPLETE:.2f} (latency={latency_ms:.1f} ms) ***"

@@ -128,7 +128,8 @@ class TestTask1Grader:
         obs = Observation(status_code=200, api_response={"status": "healthy"})
         result = g.grade(s, obs)
         assert result["done"]
-        assert result["reward"] >= 1.0
+        assert result["reward"] >= 0.20
+
 
     def test_server_alive_reward(self):
         g, s = self._make()
@@ -164,7 +165,7 @@ class TestTask2Grader:
         )
         result = g.grade(s, obs)
         assert result["done"]
-        assert result["reward"] >= 1.0
+        assert result["reward"] >= 0.25
 
 
 class TestTask3Grader:
@@ -190,7 +191,7 @@ class TestTask3Grader:
         obs = Observation(status_code=200, latency=0.050)   # 50 ms
         result = g.grade(s, obs)
         assert result["done"]
-        assert result["reward"] >= 1.0
+        assert result["reward"] >= 0.20
 
     def test_partial_latency(self, tmp_path):
         (tmp_path / "main.py").write_text("# clean code")
@@ -199,7 +200,7 @@ class TestTask3Grader:
         obs = Observation(status_code=200, latency=0.300)   # 300 ms
         result = g.grade(s, obs)
         assert not result["done"]
-        assert result["reward"] >= 0.20
+        assert result["reward"] >= 0.10
 
     def test_slow_latency_no_reward(self, tmp_path):
         (tmp_path / "main.py").write_text("time.sleep(2)")
