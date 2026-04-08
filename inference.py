@@ -32,9 +32,6 @@ import sys
 import textwrap
 from typing import List, Optional
 
-# Force stdout to be unbuffered
-sys.stdout.reconfigure(line_buffering=True)
-
 from openai import OpenAI
 
 # Import the environment and action schemas from the generated openenv client
@@ -53,9 +50,6 @@ except ImportError:
 
 
 IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") or os.getenv("IMAGE_NAME")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 TASK_NAME = os.getenv("LEGACY_CODE_ARCHEOLOGIST_TASK", "task_1_syntax_error")
 BENCHMARK = os.getenv("LEGACY_CODE_ARCHEOLOGIST_BENCHMARK", "legacy_code_archeologist")
@@ -187,7 +181,12 @@ async def main() -> None:
     success = False
 
     try:
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        # Strictly follow validator instructions for client initialization
+        client = OpenAI(
+            base_url=os.environ["API_BASE_URL"],
+            api_key=os.environ["API_KEY"]
+        )
+        
         # Initialize env
         env = await LegacyCodeArcheologistEnv.from_docker_image(IMAGE_NAME)
 
