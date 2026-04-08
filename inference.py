@@ -1,28 +1,8 @@
 """
-Inference Script Example for LegacyCodeArcheologist
-===================================================
-MANDATORY
-- Before submitting, ensure the following variables are defined in your environment configuration:
-    API_BASE_URL   The API endpoint for the LLM.
-    MODEL_NAME     The model identifier to use for inference.
-    HF_TOKEN       Your Hugging Face / API key.
-    LOCAL_IMAGE_NAME The name of the local image to use for the environment if you are using from_docker_image()
-                     method
-
-- Defaults are set only for API_BASE_URL and MODEL_NAME 
-    (and should reflect your active inference setup):
-    API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-    MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-    
-- The inference script must be named `inference.py` and placed in the root directory of the project
-- Participants must use OpenAI Client for all LLM calls using above variables
-
-STDOUT FORMAT
-- The script must emit exactly three line types to stdout, in this order:
-
-    [START] task=<task_name> env=<benchmark> model=<model_name>
-    [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-    [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+Inference Script for LegacyCodeArcheologist
+===========================================
+This script is used by the evaluation system to run agents against the environment.
+It MUST use the provided API_BASE_URL and API_KEY.
 """
 
 import asyncio
@@ -31,6 +11,9 @@ import os
 import sys
 import textwrap
 from typing import List, Optional
+
+# Ensure current directory is in path for generated openenv client
+sys.path.append(os.getcwd())
 
 from openai import OpenAI
 
@@ -49,7 +32,7 @@ except ImportError:
     LegacyCodeArcheologistAction = None
 
 
-IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") or os.getenv("IMAGE_NAME")
+IMAGE_NAME = os.getenv("API_IMAGE_NAME") or os.getenv("IMAGE_NAME") or os.getenv("LOCAL_IMAGE_NAME")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 TASK_NAME = os.getenv("LEGACY_CODE_ARCHEOLOGIST_TASK", "task_1_syntax_error")
 BENCHMARK = os.getenv("LEGACY_CODE_ARCHEOLOGIST_BENCHMARK", "legacy_code_archeologist")
@@ -132,13 +115,11 @@ def parse_action(json_text: str):
             return LegacyCodeArcheologistAction(edit_code=LegacyCodeArcheologistEditCodeAction(path=data.get("path", ""), patch=data.get("patch", "")))
         elif action_type == "CallAPI":
             return LegacyCodeArcheologistAction(call_api=LegacyCodeArcheologistCallApiAction(url=data.get("url", ""), method=data.get("method", "GET")))
-        # Fallback to pure dict if pydantic unpacking has issues:
         return LegacyCodeArcheologistAction(**{
             "action_type": action_type,
             **{k:v for k,v in data.items() if k != "action_type"}
         })
     except Exception:
-        # Default action on parse failure to keep moving
         try:
              return LegacyCodeArcheologistAction(run_test=LegacyCodeArcheologistRunTestAction(command="echo 'Invalid JSON'"))
         except:
@@ -159,7 +140,6 @@ def get_model_action_json(client: OpenAI, step: int, obs: dict, last_reward: flo
             stream=False,
         )
         text = (completion.choices[0].message.content or "").strip()
-        # strip markdown code blocks if the model wrapped it
         if text.startswith("```json"):
             text = text[7:]
         if text.startswith("```"):
@@ -167,7 +147,8 @@ def get_model_action_json(client: OpenAI, step: int, obs: dict, last_reward: flo
         if text.endswith("```"):
             text = text[:-3]
         return text.strip()
-    except Exception:
+    except Exception as e:
+        sys.stderr.write(f"LLM call failed: {e}\n")
         return '{"action_type": "RunTest", "command": "echo Model request failed"}'
 
 
@@ -181,7 +162,7 @@ async def main() -> None:
     success = False
 
     try:
-        # Strictly follow validator instructions for client initialization
+        # ABSOLUTE COMPLIANCE: Use injected environment variables for the proxy
         client = OpenAI(
             base_url=os.environ["API_BASE_URL"],
             api_key=os.environ["API_KEY"]
@@ -189,63 +170,64 @@ async def main() -> None:
         
         # Initialize env
         env = await LegacyCodeArcheologistEnv.from_docker_image(IMAGE_NAME)
-
         result = await env.reset()
-        obs = vars(result.observation)
-        last_reward = 0.0
-
-        max_steps = getattr(env, "max_steps", MAX_STEPS)
+        
+        # Determine max steps
+        max_steps = MAX_STEPS
+        if hasattr(env, "max_steps"):
+            max_steps = env.max_steps
         if hasattr(result, 'state') and hasattr(result.state, 'max_steps'):
             max_steps = result.state.max_steps
 
+        # Start inference loop
         for step in range(1, max_steps + 1):
-            if result.done:
+            # Check for termination
+            if getattr(result, 'done', False):
                 break
 
-            action_json = get_model_action_json(client, step, obs, last_reward, history)
+            obs_data = vars(result.observation)
+            action_json = get_model_action_json(client, step, obs_data, sum(rewards)/len(rewards) if rewards else 0.0, history)
             action = parse_action(action_json)
 
             if not action:
-                action_str = f"Parse failed: {action_json}"
-                log_step(step=step, action=action_str, reward=0.0, done=False, error="Action parsing failed")
+                log_step(step=step, action="parse_failure", reward=0.0, done=False, error="Failed to parse action")
                 continue
 
             try:
                 result = await env.step(action)
-                obs = vars(result.observation)
-                reward = result.reward or 0.0
-                done = result.done
-                error = obs.get("error")
+                reward = getattr(result, 'reward', 0.0)
+                done = getattr(result, 'done', False)
+                obs_data = vars(result.observation)
+                error = obs_data.get("error")
+                
                 action_str = json.dumps(json.loads(action_json))
-
+                log_step(step=step, action=action_str, reward=reward, done=done, error=error)
+                
+                rewards.append(reward)
+                steps_taken = step
+                history.append(f"Step {step}: {action_str} -> reward {reward:+.2f}")
+                
+                if done:
+                    break
             except Exception as e:
-                reward = -0.5
-                done = False
-                error = str(e)
-                action_str = "Agent execution exception"
-
-            rewards.append(reward)
-            steps_taken = step
-            last_reward = reward
-            log_step(step=step, action=action_str, reward=reward, done=done, error=error)
-            history.append(f"Step {step}: {action_str} -> reward {reward:+.2f}")
-
-            if done:
+                log_step(step=step, action="execution_error", reward=-0.5, done=False, error=str(e))
                 break
 
         score = sum(rewards)
-        score = min(max(score, 0.0), 1.0)
+        # Final scores are clamped/processed by the evaluator, but we provide the raw sum
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     except Exception as e:
         sys.stderr.write(f"Inference error: {e}\n")
     finally:
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+        log_end(success=success, steps=steps_taken, score=score if score > 0 else 0.0, rewards=rewards)
 
 
 if __name__ == "__main__":
     if LegacyCodeArcheologistEnv is None:
+        # Even if import fails, we MUST print START and END to be compliant
         log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+        sys.stderr.write("CRITICAL: legacy_code_archeologist package not found.\n")
         log_end(success=False, steps=0, score=0.0, rewards=[])
     else:
         asyncio.run(main())

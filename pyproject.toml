@@ -42,7 +42,8 @@ rl = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["server*", "env*", "models*", "task*", "grader*", "inference*"]
+include = ["server*", "env*", "models*", "task*", "grader*", "inference*", "legacy_code_archeologist*"]
+
 
 
 [tool.pytest.ini_options]
