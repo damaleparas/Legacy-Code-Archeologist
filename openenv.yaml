@@ -70,9 +70,9 @@ observation_space:
 
 # ── Reward range ──────────────────────────────────────────────────────────────
 reward:
-  min: -0.10
-  max:  1.50    # base 1.0 + continuous bonus on task 3
-  terminal_reward: 1.00
+  min: 0.01
+  max:  0.99    # Strict fractional cap strictly between 0 and 1
+  terminal_reward: 0.99
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 evaluation:
