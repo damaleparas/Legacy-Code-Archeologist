@@ -173,10 +173,17 @@ def get_model_action_json(client: OpenAI, step: int, obs: dict, last_reward: flo
 
 
 async def main() -> None:
+    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     # Initialize env
-    env = await LegacyCodeArcheologistEnv.from_docker_image(IMAGE_NAME)
+    try:
+        env = await LegacyCodeArcheologistEnv.from_docker_image(IMAGE_NAME)
+    except Exception as e:
+        print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
+        log_end(success=False, steps=0, score=0.0, rewards=[])
+        return
+
 
     history: List[str] = []
     rewards: List[float] = []
@@ -184,9 +191,8 @@ async def main() -> None:
     score = 0.0
     success = False
 
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-
     try:
+
         result = await env.reset()
         obs = vars(result.observation) # Convert observation object to dict for easy handling
         last_reward = 0.0
@@ -251,6 +257,9 @@ async def main() -> None:
 
 if __name__ == "__main__":
     if LegacyCodeArcheologistEnv is None:
-        print("Please ensure the project correctly generates the dynamic openenv classes during testing.")
+        log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+        print("[DEBUG] Could not import legacy_code_archeologist package.", flush=True)
+        log_end(success=False, steps=0, score=0.0, rewards=[])
     else:
         asyncio.run(main())
+
