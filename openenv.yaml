@@ -34,11 +34,35 @@ docker:
 
 # ── Tasks ─────────────────────────────────────────────────────────────────────
 tasks:
-  - task_1_syntax_error
-  - task_2_auth_header
-  - task_3_perf_optimization
-  - task_4_db_schema_mismatch
-  - task_5_env_var_leak
+  - id: task_1_syntax_error
+    difficulty: easy
+    max_steps: 15
+    description: "Fix a SyntaxError in a FastAPI route and verify /health returns HTTP 200."
+    has_grader: true
+
+  - id: task_2_auth_header
+    difficulty: medium
+    max_steps: 20
+    description: "Discover the X-Internal-Token from README.txt and call /process successfully."
+    has_grader: true
+
+  - id: task_3_perf_optimization
+    difficulty: hard
+    max_steps: 25
+    description: "Remove time.sleep() bottleneck; verify /compute latency < 100 ms."
+    has_grader: true
+
+  - id: task_4_db_schema_mismatch
+    difficulty: hard
+    max_steps: 25
+    description: "Inspect SQLite schema for renamed columns and update the FastAPI query accordingly."
+    has_grader: true
+
+  - id: task_5_env_var_leak
+    difficulty: medium
+    max_steps: 15
+    description: "Modify main.py to mask the DB_PASSWORD environment variable in the /env response."
+    has_grader: true
 
 # ── Action space ──────────────────────────────────────────────────────────────
 
@@ -60,10 +84,11 @@ observation_space:
   files_modified: list[string]
 
 # ── Reward range ──────────────────────────────────────────────────────────────
-reward:
-  min: 0.01
-  max: 0.99
-  terminal_reward: 0.99
+reward_range: [0.01, 0.99]
+terminal_reward: 0.99
+
+grader:
+  type: deterministic
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 evaluation:
