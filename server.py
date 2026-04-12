@@ -1,10 +1,12 @@
 """
 server.py — OpenEnv HTTP wrapper for LegacyCodeArcheologist
-Exposes /reset, /step, /close as JSON endpoints so the openenv-core
-client (or any HTTP client) can drive the environment remotely.
+
+Exposes /reset, /step, /close, /tasks, /info, /health as JSON endpoints
+so the openenv-core client (or any HTTP client) can drive the environment
+remotely.
 
 Run:
-    python server.py --port 5000 --task task_1_syntax_error
+    python server.py --port 7860 --task task_1_syntax_error
 """
 
 from __future__ import annotations
@@ -18,13 +20,13 @@ from urllib.parse import urlparse
 
 from env import LegacyCodeEnv
 from models import ReadFile, EditCode, RunTest, CallAPI, ActionType
+from task import TASK_REGISTRY
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("openenv.server")
 
 # Global env instance (single-threaded server)
 _env: LegacyCodeEnv | None = None
-
 
 # ---------------------------------------------------------------------------
 # Action deserialiser
@@ -47,7 +49,6 @@ def deserialise_action(data: dict):
         )
     raise ValueError(f"Unknown action_type: {atype}")
 
-
 # ---------------------------------------------------------------------------
 # Request handler
 # ---------------------------------------------------------------------------
@@ -67,7 +68,7 @@ class EnvHandler(BaseHTTPRequestHandler):
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0))
-        raw    = self.rfile.read(length) if length else b"{}"
+        raw = self.rfile.read(length) if length else b"{}"
         return json.loads(raw)
 
     def do_POST(self):
@@ -75,13 +76,13 @@ class EnvHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
 
         if path == "/reset":
-            body    = self._read_body()
+            body = self._read_body()
             task_id = body.get("task_id", "task_1_syntax_error")
             try:
                 if _env:
                     _env.close()
                 _env = LegacyCodeEnv(task_id=task_id)
-                obs  = _env.reset()
+                obs = _env.reset()
                 self._send_json(200, {"observation": obs.to_dict()})
             except Exception as exc:
                 self._send_json(500, {"error": str(exc)})
@@ -91,7 +92,7 @@ class EnvHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "Call /reset first."})
                 return
             try:
-                body   = self._read_body()
+                body = self._read_body()
                 action = deserialise_action(body)
                 obs, reward, done, info = _env.step(action)
                 self._send_json(200, {
@@ -114,13 +115,30 @@ class EnvHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path == "/info":
-            self._send_json(200, LegacyCodeEnv.metadata)
-        elif path == "/health":
+
+        if path == "/health":
             self._send_json(200, {"status": "ok"})
+
+        elif path == "/info":
+            self._send_json(200, LegacyCodeEnv.metadata)
+
+        elif path == "/tasks":
+            tasks = []
+            for task_id, cfg in TASK_REGISTRY.items():
+                tasks.append({
+                    "id":          task_id,
+                    "description": cfg["description"],
+                    "difficulty":  cfg["difficulty"],
+                    "max_steps":   cfg["max_steps"],
+                    "has_grader":  True,
+                    "grader": {
+                        "type": "deterministic"
+                    },
+                })
+            self._send_json(200, {"tasks": tasks})
+
         else:
             self._send_json(404, {"error": "Not found"})
-
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -128,14 +146,14 @@ class EnvHandler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="OpenEnv server for LegacyCodeArcheologist")
-    parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--host", default="0.0.0.0")
     args, _ = parser.parse_known_args()
 
-
     server = HTTPServer((args.host, args.port), EnvHandler)
     log.info(f"OpenEnv server listening on {args.host}:{args.port}")
-    log.info(f"Tasks: {list(LegacyCodeEnv.metadata['tasks'])}")
+    log.info(f"Tasks: {list(TASK_REGISTRY.keys())}")
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -143,7 +161,6 @@ def main():
         if _env:
             _env.close()
         sys.exit(0)
-
 
 if __name__ == "__main__":
     main()
