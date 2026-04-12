@@ -79,10 +79,8 @@ observation_space:
   files_modified: list[string]
 
 # ── Reward range ──────────────────────────────────────────────────────────────
-reward:
-  min: 0.01
-  max:  0.99    # Strict fractional cap strictly between 0 and 1
-  terminal_reward: 0.99
+reward_range: [0.01, 0.99]
+terminal_reward: 0.99
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 evaluation:

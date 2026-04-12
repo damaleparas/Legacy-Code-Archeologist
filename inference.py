@@ -152,13 +152,9 @@ def get_model_action_json(client: OpenAI, step: int, obs: dict, last_reward: flo
         return '{"action_type": "RunTest", "command": "echo Model request failed"}'
 
 
-async def main() -> None:
-    # Diagnostic: show all available tasks inherited from env.py metadata
-    if LegacyCodeArcheologistEnv and hasattr(LegacyCodeArcheologistEnv, "metadata"):
-        tasks = LegacyCodeArcheologistEnv.metadata.get("tasks", [])
-        sys.stderr.write(f"Available tasks: {', '.join(tasks)}\n")
-    
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+async def run_inference(task_id: str, client: OpenAI) -> float:
+    sys.stderr.write(f"\n--- Starting Task: {task_id} ---\n")
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
     
     history: List[str] = []
     rewards: List[float] = []
@@ -167,40 +163,15 @@ async def main() -> None:
     success = False
 
     try:
-        # ABSOLUTE COMPLIANCE: Use injected environment variables for the proxy
-        client = OpenAI(
-            base_url=os.environ["API_BASE_URL"],
-            api_key=os.environ["API_KEY"]
-        )
-        
-        # Test heartbeat to guarantee proxy registers a call, even if env init fails
-        try:
-            client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": "ping"}],
-                max_tokens=1,
-            )
-        except Exception as e:
-            sys.stderr.write(f"API Heartbeat failed: {e}\n")
-            
-        sys.stderr.write(f"Initializing Env with image: {IMAGE_NAME}\n")
-        # Initialize env
+        sys.stderr.write(f"Initializing Env for {task_id} with image: {IMAGE_NAME}\n")
         env = await LegacyCodeArcheologistEnv.from_docker_image(IMAGE_NAME)
-        sys.stderr.write("Env initialized successfully.\n")
-        result = await env.reset()
-        sys.stderr.write("Env reset successfully.\n")
-
+        result = await env.reset(task_id=task_id)
         
-        # Determine max steps
         max_steps = MAX_STEPS
         if hasattr(env, "max_steps"):
             max_steps = env.max_steps
-        if hasattr(result, 'state') and hasattr(result.state, 'max_steps'):
-            max_steps = result.state.max_steps
 
-        # Start inference loop
         for step in range(1, max_steps + 1):
-            # Check for termination
             if getattr(result, 'done', False):
                 break
 
@@ -233,20 +204,48 @@ async def main() -> None:
                 break
 
         score = sum(rewards)
-        # Ensure score falls strictly inside (0.0, 1.0) because the evaluator restricts scores
         score = min(max(score, 0.01), 0.99)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     except Exception as e:
-        sys.stderr.write(f"Inference error: {e}\n")
+        sys.stderr.write(f"Inference error on {task_id}: {e}\n")
     finally:
-        # Final safety clamp for the parsed score
         final_score = min(max(score, 0.01), 0.99)
         log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
+        return final_score
+
+
+async def main() -> None:
+    # Diagnostic: show all available tasks
+    all_tasks = []
+    if LegacyCodeArcheologistEnv and hasattr(LegacyCodeArcheologistEnv, "metadata"):
+        all_tasks = LegacyCodeArcheologistEnv.metadata.get("tasks", [])
+        sys.stderr.write(f"Available tasks in environment: {', '.join(all_tasks)}\n")
+
+    # Determine which tasks to run
+    task_env = os.getenv("LEGACY_CODE_ARCHEOLOGIST_TASK")
+    if task_env == "all":
+        tasks_to_run = all_tasks
+    else:
+        tasks_to_run = [TASK_NAME]
+
+    try:
+        client = OpenAI(
+            base_url=os.environ["API_BASE_URL"],
+            api_key=os.environ["API_KEY"]
+        )
+        # Heartbeat
+        client.chat.completions.create(model=MODEL_NAME, messages=[{"role": "user", "content": "ping"}], max_tokens=1)
+        
+        for tid in tasks_to_run:
+            await run_inference(tid, client)
+
+    except Exception as e:
+        sys.stderr.write(f"Global inference error: {e}\n")
 
 
 if __name__ == "__main__":
     if LegacyCodeArcheologistEnv is None:
-        sys.stderr.write("CRITICAL: legacy_code_archeologist package not found. Proceeding to force heartbeat.\n")
+        sys.stderr.write("CRITICAL: legacy_code_archeologist package not found.\n")
     asyncio.run(main())
 
