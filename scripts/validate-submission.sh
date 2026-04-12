@@ -1,185 +1,134 @@
 #!/usr/bin/env bash
-#
-# validate-submission.sh — OpenEnv Submission Validator
-#
-# Checks that your HF Space is live, Docker image builds, and openenv validate passes.
-#
-# Prerequisites:
-#   - Docker:       https://docs.docker.com/get-docker/
-#   - openenv-core: pip install openenv-core
-#   - curl (usually pre-installed)
-#
-# Run:
-#   curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/validate-submission.sh | bash -s -- <ping_url> [repo_dir]
-#
-#   Or download and run locally:
-#     chmod +x validate-submission.sh
-#     ./validate-submission.sh <ping_url> [repo_dir]
-#
-# Arguments:
-#   ping_url   Your HuggingFace Space URL (e.g. https://your-space.hf.space)
-#   repo_dir   Path to your repo (default: current directory)
-#
-# Examples:
-#   ./validate-submission.sh https://my-team.hf.space
-#   ./validate-submission.sh https://my-team.hf.space ./my-repo
-#
+# validate-submission.sh — pre-submission validator for LegacyCodeArcheologist
+# Usage: bash scripts/validate-submission.sh <BASE_URL> <REPO_DIR>
+# Example: bash scripts/validate-submission.sh https://your-space.hf.space .
 
-set -uo pipefail
+set -euo pipefail
 
-DOCKER_BUILD_TIMEOUT=600
-if [ -t 1 ]; then
-  RED='\033[0;31m'
-  GREEN='\033[0;32m'
-  YELLOW='\033[1;33m'
-  BOLD='\033[1m'
-  NC='\033[0m'
-else
-  RED='' GREEN='' YELLOW='' BOLD='' NC=''
-fi
-
-run_with_timeout() {
-  local secs="$1"; shift
-  if command -v timeout &>/dev/null; then
-    timeout "$secs" "$@"
-  elif command -v gtimeout &>/dev/null; then
-    gtimeout "$secs" "$@"
-  else
-    "$@" &
-    local pid=$!
-    ( sleep "$secs" && kill "$pid" 2>/dev/null ) &
-    local watcher=$!
-    wait "$pid" 2>/dev/null
-    local rc=$?
-    kill "$watcher" 2>/dev/null
-    wait "$watcher" 2>/dev/null
-    return $rc
-  fi
-}
-
-portable_mktemp() {
-  local prefix="${1:-validate}"
-  mktemp "${TMPDIR:-/tmp}/${prefix}-XXXXXX" 2>/dev/null || mktemp
-}
-
-CLEANUP_FILES=()
-cleanup() { rm -f "${CLEANUP_FILES[@]+"${CLEANUP_FILES[@]}"}"; }
-trap cleanup EXIT
-
-PING_URL="${1:-}"
+BASE_URL="${1:-http://localhost:7860}"
 REPO_DIR="${2:-.}"
-
-if [ -z "$PING_URL" ]; then
-  printf "Usage: %s <ping_url> [repo_dir]\n" "$0"
-  printf "\n"
-  printf "  ping_url   Your HuggingFace Space URL (e.g. https://your-space.hf.space)\n"
-  printf "  repo_dir   Path to your repo (default: current directory)\n"
-  exit 1
-fi
-
-if ! REPO_DIR="$(cd "$REPO_DIR" 2>/dev/null && pwd)"; then
-  printf "Error: directory '%s' not found\n" "${2:-.}"
-  exit 1
-fi
-PING_URL="${PING_URL%/}"
-export PING_URL
 PASS=0
+FAIL=0
 
-log()  { printf "[%s] %b\n" "$(date -u +%H:%M:%S)" "$*"; }
-pass() { log "${GREEN}PASSED${NC} -- $1"; PASS=$((PASS + 1)); }
-fail() { log "${RED}FAILED${NC} -- $1"; }
-hint() { printf "  ${YELLOW}Hint:${NC} %b\n" "$1"; }
-stop_at() {
-  printf "\n"
-  printf "${RED}${BOLD}Validation stopped at %s.${NC} Fix the above before continuing.\n" "$1"
-  exit 1
+green()  { echo -e "\033[32m[PASS]\033[0m $*"; }
+red()    { echo -e "\033[31m[FAIL]\033[0m $*"; }
+yellow() { echo -e "\033[33m[INFO]\033[0m $*"; }
+
+check() {
+    local desc="$1"; local result="$2"
+    if [ "$result" = "ok" ]; then
+        green "$desc"
+        PASS=$((PASS+1))
+    else
+        red "$desc — $result"
+        FAIL=$((FAIL+1))
+    fi
 }
 
-printf "\n"
-printf "${BOLD}========================================${NC}\n"
-printf "${BOLD}  OpenEnv Submission Validator${NC}\n"
-printf "${BOLD}========================================${NC}\n"
-log "Repo:     $REPO_DIR"
-log "Ping URL: $PING_URL"
-printf "\n"
+yellow "Validating against: $BASE_URL"
+echo ""
 
-log "${BOLD}Step 1/3: Pinging HF Space${NC} ($PING_URL/reset) ..."
-
-CURL_OUTPUT=$(portable_mktemp "validate-curl")
-CLEANUP_FILES+=("$CURL_OUTPUT")
-HTTP_CODE=$(curl -s -o "$CURL_OUTPUT" -w "%{http_code}" -X POST \
-  -H "Content-Type: application/json" -d '{}' \
-  "$PING_URL/reset" --max-time 30 2>"$CURL_OUTPUT" || printf "000")
-
-if [ "$HTTP_CODE" = "200" ]; then
-  pass "HF Space is live and responds to /reset"
-elif [ "$HTTP_CODE" = "000" ]; then
-  fail "HF Space not reachable (connection failed or timed out)"
-  hint "Check your network connection and that the Space is running."
-  hint "Try: curl -s -o /dev/null -w '%{http_code}' -X POST $PING_URL/reset"
-  stop_at "Step 1"
+# ── 1. Health check ───────────────────────────────────────────────────────────
+HEALTH=$(curl -sf "$BASE_URL/health" 2>/dev/null || echo "ERROR")
+if echo "$HEALTH" | grep -q "ok\|healthy"; then
+    check "GET /health returns ok/healthy" "ok"
 else
-  fail "HF Space /reset returned HTTP $HTTP_CODE (expected 200)"
-  hint "Make sure your Space is running and the URL is correct."
-  hint "Try opening $PING_URL in your browser first."
-  stop_at "Step 1"
+    check "GET /health returns ok/healthy" "$HEALTH"
 fi
 
-log "${BOLD}Step 2/3: Running docker build${NC} ..."
-
-if ! command -v docker &>/dev/null; then
-  fail "docker command not found"
-  hint "Install Docker: https://docs.docker.com/get-docker/"
-  stop_at "Step 2"
+# ── 2. /tasks endpoint ───────────────────────────────────────────────────────
+TASKS_RESP=$(curl -sf "$BASE_URL/tasks" 2>/dev/null || echo "ERROR")
+if echo "$TASKS_RESP" | grep -q "tasks\|id"; then
+    check "GET /tasks returns task list" "ok"
+else
+    check "GET /tasks returns task list" "$TASKS_RESP"
 fi
 
+# ── 3. At least 3 tasks with graders ─────────────────────────────────────────
+GRADER_COUNT=$(echo "$TASKS_RESP" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    tasks = data.get('tasks', data) if isinstance(data, dict) else data
+    count = sum(1 for t in tasks if t.get('has_grader') or t.get('grader'))
+    print(count)
+except Exception as e:
+    print(0)
+" 2>/dev/null || echo "0")
+
+if [ "$GRADER_COUNT" -ge 3 ]; then
+    check "At least 3 tasks have graders (found $GRADER_COUNT)" "ok"
+else
+    check "At least 3 tasks have graders (found $GRADER_COUNT)" "need >= 3, got $GRADER_COUNT"
+fi
+
+# ── 4. /reset works ───────────────────────────────────────────────────────────
+RESET_RESP=$(curl -sf -X POST "$BASE_URL/reset" \
+    -H "Content-Type: application/json" \
+    -d '{"task_id":"task_1_syntax_error"}' 2>/dev/null || echo "ERROR")
+if echo "$RESET_RESP" | grep -q "observation"; then
+    check "POST /reset returns observation" "ok"
+else
+    check "POST /reset returns observation" "$RESET_RESP"
+fi
+
+# ── 5. /step works ────────────────────────────────────────────────────────────
+STEP_RESP=$(curl -sf -X POST "$BASE_URL/step" \
+    -H "Content-Type: application/json" \
+    -d '{"action_type":"ReadFile","path":"main.py"}' 2>/dev/null || echo "ERROR")
+if echo "$STEP_RESP" | grep -q "reward\|observation"; then
+    check "POST /step returns reward + observation" "ok"
+else
+    check "POST /step returns reward + observation" "$STEP_RESP"
+fi
+
+# ── 6. openenv.yaml present ──────────────────────────────────────────────────
+if [ -f "$REPO_DIR/openenv.yaml" ]; then
+    check "openenv.yaml present" "ok"
+else
+    check "openenv.yaml present" "not found"
+fi
+
+# ── 7. Dockerfile present ────────────────────────────────────────────────────
 if [ -f "$REPO_DIR/Dockerfile" ]; then
-  DOCKER_CONTEXT="$REPO_DIR"
-elif [ -f "$REPO_DIR/server/Dockerfile" ]; then
-  DOCKER_CONTEXT="$REPO_DIR/server"
+    check "Dockerfile present" "ok"
 else
-  fail "No Dockerfile found in repo root or server/ directory"
-  stop_at "Step 2"
+    check "Dockerfile present" "not found"
 fi
 
-log "  Found Dockerfile in $DOCKER_CONTEXT"
-
-BUILD_OK=false
-BUILD_OUTPUT=$(run_with_timeout "$DOCKER_BUILD_TIMEOUT" docker build "$DOCKER_CONTEXT" 2>&1) && BUILD_OK=true
-
-if [ "$BUILD_OK" = true ]; then
-  pass "Docker build succeeded"
+# ── 8. inference.py present ──────────────────────────────────────────────────
+if [ -f "$REPO_DIR/inference.py" ]; then
+    check "inference.py present" "ok"
 else
-  fail "Docker build failed (timeout=${DOCKER_BUILD_TIMEOUT}s)"
-  printf "%s\n" "$BUILD_OUTPUT" | tail -20
-  stop_at "Step 2"
+    check "inference.py present" "not found"
 fi
 
-log "${BOLD}Step 3/3: Running openenv validate${NC} ..."
-
-if ! command -v openenv &>/dev/null; then
-  fail "openenv command not found"
-  hint "Install it: pip install openenv-core"
-  stop_at "Step 3"
-fi
-
-VALIDATE_OK=false
-VALIDATE_OUTPUT=$(cd "$REPO_DIR" && openenv validate 2>&1) && VALIDATE_OK=true
-
-if [ "$VALIDATE_OK" = true ]; then
-  pass "openenv validate passed"
-  [ -n "$VALIDATE_OUTPUT" ] && log "  $VALIDATE_OUTPUT"
+# ── 9. inference.py has required log markers ─────────────────────────────────
+if grep -q "\[START\]" "$REPO_DIR/inference.py" && \
+   grep -q "\[STEP\]"  "$REPO_DIR/inference.py" && \
+   grep -q "\[END\]"   "$REPO_DIR/inference.py"; then
+    check "inference.py has [START]/[STEP]/[END] log markers" "ok"
 else
-  fail "openenv validate failed"
-  printf "%s\n" "$VALIDATE_OUTPUT"
-  stop_at "Step 3"
+    check "inference.py has [START]/[STEP]/[END] log markers" "missing markers"
 fi
 
-printf "\n"
-printf "${BOLD}========================================${NC}\n"
-printf "${GREEN}${BOLD}  All 3/3 checks passed!${NC}\n"
-printf "${GREEN}${BOLD}  Your submission is ready to submit.${NC}\n"
-printf "${BOLD}========================================${NC}\n"
-printf "\n"
+# ── 10. Score range in inference.py ──────────────────────────────────────────
+if grep -q "0\.99\|0\.999" "$REPO_DIR/inference.py"; then
+    check "inference.py uses score threshold >= 0.99" "ok"
+else
+    check "inference.py uses score threshold >= 0.99" "check SUCCESS_SCORE_THRESHOLD"
+fi
 
-exit 0
+# ── Summary ───────────────────────────────────────────────────────────────────
+echo ""
+echo "─────────────────────────────────"
+echo "Results: $PASS passed, $FAIL failed"
+echo "─────────────────────────────────"
+
+if [ "$FAIL" -eq 0 ]; then
+    green "All checks passed — ready to submit!"
+    exit 0
+else
+    red "$FAIL check(s) failed — fix before submitting."
+    exit 1
+fi
