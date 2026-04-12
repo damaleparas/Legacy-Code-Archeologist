@@ -15,9 +15,10 @@ from task import TASK_REGISTRY
 # ---------------------------------------------------------------------------
 # Reward constants (shared with env.py — kept here for grader autonomy)
 # ---------------------------------------------------------------------------
-R_TASK_COMPLETE   =  0.30
-R_PARTIAL_CREDIT  =  0.15
-R_STEP_PROGRESS   =  0.05
+R_PARTICIPATION   =  0.01
+R_TASK_COMPLETE   =  0.49
+R_PARTIAL_CREDIT  =  0.20
+R_STEP_PROGRESS   =  0.10
 R_INVALID_ACTION  = -0.01
 R_INVALID_SYNTAX  = -0.05
 
@@ -41,6 +42,13 @@ class BaseGrader(abc.ABC):
             message : str  (human-readable explanation)
         """
 
+    def _participation_bonus(self, state: State) -> float:
+        """One-time participation reward to ensure score > 0."""
+        if not self._flagged(state, "participated"):
+            self._flag(state, "participated")
+            return R_PARTICIPATION
+        return 0.0
+
     # Convenience: store intermediate flags in state.grader_state
     def _flag(self, state: State, key: str, value: Any = True) -> None:
         state.grader_state[key] = value
@@ -56,15 +64,16 @@ class BaseGrader(abc.ABC):
 class Task1Grader(BaseGrader):
     """
     Reward schedule:
+        +0.01  Participation (first step)
         +0.05  first ReadFile on main.py
         +0.10  any EditCode on main.py
-        +0.20  server survived restart (no error in obs)
-        +1.00  CallAPI → /health → HTTP 200  (terminal)
-        -0.05  EditCode that introduces a syntax error
+        +0.10  server survived restart (no error in obs)
+        +0.73  CallAPI → /health → HTTP 200  (terminal)
+        Total: 0.99
     """
 
     def grade(self, state: State, obs: Observation) -> Dict[str, Any]:
-        reward  = 0.0
+        reward  = self._participation_bonus(state)
         done    = False
         message = ""
 
@@ -92,16 +101,17 @@ class Task1Grader(BaseGrader):
             and obs.status_code != 0
             and not self._flagged(state, "server_alive")
         ):
-            reward += 0.20
+            reward += 0.10
             self._flag(state, "server_alive")
-            message += " +0.20 server reachable."
+            message += " +0.10 server reachable."
 
         # Terminal: /health → 200
         if obs.status_code == 200 and not self._flagged(state, "task_done"):
-            reward += R_TASK_COMPLETE
+            # Adjusted to hit exactly 0.99 total
+            reward += 0.73
             done    = True
             self._flag(state, "task_done")
-            message += " *** TASK COMPLETE +1.00 ***"
+            message += " *** TASK COMPLETE ***"
 
         return {"reward": reward, "done": done, "message": message.strip()}
 
@@ -113,17 +123,19 @@ class Task1Grader(BaseGrader):
 class Task2Grader(BaseGrader):
     """
     Reward schedule:
-        +0.10  README.txt read (agent discovers token)
-        +0.20  API call includes correct header key
-        +0.30  HTTP 200 received
-        +1.00  JSON body contains {"status": "ok"}  (terminal)
+        +0.01  Participation
+        +0.10  README.txt read
+        +0.20  correct header sent
+        +0.20  HTTP 200 received
+        +0.48  JSON body contains {"status": "ok"}  (terminal)
+        Total: 0.99
     """
 
     EXPECTED_HEADER = "X-Internal-Token"
     EXPECTED_JSON   = {"status": "ok"}
 
     def grade(self, state: State, obs: Observation) -> Dict[str, Any]:
-        reward  = 0.0
+        reward  = self._participation_bonus(state)
         done    = False
         message = ""
 
@@ -137,10 +149,8 @@ class Task2Grader(BaseGrader):
             self._flag(state, "readme_read")
             message += " +0.10 README read."
 
-        # Progress: header present in last API call (stored in grader_state)
+        # Progress: header present in last API call
         if obs.api_response is not None:
-            # We can't inspect request headers from obs alone;
-            # the env stores them in grader_state during dispatch
             headers_sent = state.grader_state.get("last_request_headers", {})
             if self.EXPECTED_HEADER in headers_sent and not self._flagged(state, "header_sent"):
                 reward += 0.20
@@ -149,9 +159,9 @@ class Task2Grader(BaseGrader):
 
         # Progress: HTTP 200
         if obs.status_code == 200 and not self._flagged(state, "status_200"):
-            reward += 0.30
+            reward += 0.20
             self._flag(state, "status_200")
-            message += " +0.30 HTTP 200."
+            message += " +0.20 HTTP 200."
 
         # Terminal: JSON validated
         if (
@@ -159,10 +169,10 @@ class Task2Grader(BaseGrader):
             and obs.api_response.get("status") == "ok"
             and not self._flagged(state, "task_done")
         ):
-            reward += R_TASK_COMPLETE
+            reward += 0.48
             done    = True
             self._flag(state, "task_done")
-            message += " *** TASK COMPLETE +1.00 ***"
+            message += " *** TASK COMPLETE ***"
 
         return {"reward": reward, "done": done, "message": message.strip()}
 
@@ -174,23 +184,23 @@ class Task2Grader(BaseGrader):
 class Task3Grader(BaseGrader):
     """
     Reward schedule:
-        +0.10  file read and 'time.sleep' found in content
-        +0.20  edit applied (sleep removed from file)
-        +0.40  latency < 500 ms  (partial credit)
-        +1.00  latency < 100 ms  (terminal, full score)
-        Continuous bonus:  score = max(0, 1 - latency_ms / 100)
-                           applied only when latency < 500 ms
+        +0.01  Participation
+        +0.10  bottleneck found
+        +0.20  sleep removed
+        +0.20  latency < 500 ms
+        +0.48  latency < 100 ms (+ bonus)
+        Total: 0.99
     """
 
-    LATENCY_FULL_MS    = 100    # ms → full score
-    LATENCY_PARTIAL_MS = 500    # ms → partial credit
+    LATENCY_FULL_MS    = 100
+    LATENCY_PARTIAL_MS = 500
 
     def grade(self, state: State, obs: Observation) -> Dict[str, Any]:
-        reward  = 0.0
+        reward  = self._participation_bonus(state)
         done    = False
         message = ""
 
-        # Progress: agent found the bottleneck by reading the file
+        # Progress: agent found the bottleneck
         if (
             obs.file_content
             and "time.sleep" in obs.file_content
@@ -200,12 +210,11 @@ class Task3Grader(BaseGrader):
             self._flag(state, "bottleneck_found")
             message += " +0.10 bottleneck located."
 
-        # Progress: sleep removed (edit applied)
+        # Progress: sleep removed
         if (
             "main.py" in state.files_modified
             and not self._flagged(state, "sleep_removed")
         ):
-            # Verify the current file no longer contains time.sleep
             import os
             fpath = os.path.join(state.sandbox_root, "main.py")
             try:
@@ -217,22 +226,63 @@ class Task3Grader(BaseGrader):
             except OSError:
                 pass
 
-        # Performance scoring based on observed latency
+        # Performance scoring
         if obs.latency > 0 and obs.status_code and obs.status_code == 200:
             latency_ms = obs.latency * 1000
             if latency_ms < self.LATENCY_FULL_MS:
                 if not self._flagged(state, "task_done"):
-                    # Continuous score component
                     continuous = max(0.0, 1.0 - latency_ms / self.LATENCY_FULL_MS)
-                    reward += R_TASK_COMPLETE + (continuous * 0.20)
+                    # Base 0.28 + up to 0.20 bonus = 0.48
+                    reward += 0.28 + (continuous * 0.20)
                     done    = True
                     self._flag(state, "task_done")
-                    message += f" *** TASK COMPLETE +{R_TASK_COMPLETE:.2f} (latency={latency_ms:.1f} ms) ***"
+                    message += f" *** TASK COMPLETE (latency={latency_ms:.1f} ms) ***"
             elif latency_ms < self.LATENCY_PARTIAL_MS:
                 if not self._flagged(state, "partial_latency"):
-                    reward += R_PARTIAL_CREDIT
+                    reward += 0.20
                     self._flag(state, "partial_latency")
-                    message += f" +0.30 partial (latency={latency_ms:.1f} ms, target<100 ms)."
+                    message += f" +0.20 partial (latency={latency_ms:.1f} ms)."
+
+        return {"reward": reward, "done": done, "message": message.strip()}
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — DB Schema mismatch
+# ---------------------------------------------------------------------------
+
+class Task4Grader(BaseGrader):
+    """
+    Reward schedule:
+        +0.01  Participation
+        +0.10  schema read
+        +0.40  query fixed (edit applied)
+        +0.48  status 200 OK
+        Total: 0.99
+    """
+
+    def grade(self, state: State, obs: Observation) -> Dict[str, Any]:
+        reward  = self._participation_bonus(state)
+        done    = False
+        message = ""
+
+        # Progress: schema read
+        if obs.stdout and "CREATE TABLE" in obs.stdout and not self._flagged(state, "schema_read"):
+            reward += 0.10
+            self._flag(state, "schema_read")
+            message += " +0.10 schema inspected."
+
+        # Progress: edit applied
+        if "main.py" in state.files_modified and not self._flagged(state, "edit_applied"):
+            reward += 0.40
+            self._flag(state, "edit_applied")
+            message += " +0.40 edit applied."
+
+        # Terminal: success
+        if obs.status_code == 200 and not self._flagged(state, "task_done"):
+            reward += 0.48
+            done    = True
+            self._flag(state, "task_done")
+            message += " *** TASK COMPLETE ***"
 
         return {"reward": reward, "done": done, "message": message.strip()}
 
@@ -245,6 +295,7 @@ _GRADER_MAP = {
     "task_1_syntax_error":      Task1Grader,
     "task_2_auth_header":       Task2Grader,
     "task_3_perf_optimization": Task3Grader,
+    "task_4_db_schema_mismatch": Task4Grader,
 }
 
 
@@ -252,3 +303,4 @@ def get_grader(task_id: str) -> BaseGrader:
     if task_id not in _GRADER_MAP:
         raise KeyError(f"No grader registered for task '{task_id}'.")
     return _GRADER_MAP[task_id](task_id)
+

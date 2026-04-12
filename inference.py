@@ -158,7 +158,7 @@ async def main() -> None:
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.0
+    score = 0.01
     success = False
 
     try:
@@ -235,7 +235,9 @@ async def main() -> None:
     except Exception as e:
         sys.stderr.write(f"Inference error: {e}\n")
     finally:
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+        # Final safety clamp for the parsed score
+        final_score = min(max(score, 0.01), 0.99)
+        log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
 
 
 if __name__ == "__main__":

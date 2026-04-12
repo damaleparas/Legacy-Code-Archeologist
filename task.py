@@ -35,10 +35,10 @@ TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "max_steps": 15,
         "reward_shaping": {
-            "read_file":     0.05,   # first read
-            "edit_applied":  0.10,   # any edit
-            "server_alive":  0.20,   # server restarted without crash
-            "status_200":    1.00,   # terminal success
+            "read_file":     0.05,
+            "edit_applied":  0.10,
+            "server_alive":  0.10,
+            "status_200":    0.74,   # 0.05 + 0.10 + 0.10 + 0.74 = 0.99
         },
         "hint": "Look for a missing ':' on a function definition line.",
     },
@@ -68,10 +68,10 @@ TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "max_steps": 20,
         "reward_shaping": {
-            "readme_read":       0.10,   # agent reads README
-            "header_present":    0.20,   # correct header sent
-            "status_200":        0.30,   # HTTP 200
-            "json_validated":    1.00,   # terminal: JSON body correct
+            "readme_read":       0.10,
+            "header_present":    0.20,
+            "status_200":        0.20,
+            "json_validated":    0.49,   # 0.1+0.2+0.2+0.49 = 0.99
         },
         "hint": "The token is documented in README.txt under 'Internal Auth'.",
     },
@@ -99,12 +99,40 @@ TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "max_steps": 25,
         "reward_shaping": {
-            "bottleneck_found":   0.10,   # agent reads and identifies sleep
-            "sleep_removed":      0.20,   # file edited (sleep line gone)
-            "latency_lt_500ms":   0.40,   # partial credit
-            "latency_lt_100ms":   1.00,   # terminal success
+            "bottleneck_found":   0.10,
+            "sleep_removed":      0.20,
+            "latency_lt_500ms":   0.20,
+            "latency_lt_100ms":   0.49,   # 0.1+0.2+0.2+0.49 = 0.99
         },
         "hint": "Search for 'time.sleep' inside main.py.",
+    },
+
+    # -----------------------------------------------------------------------
+    # Task 4 — HARD
+    # SQLite schema mismatch. Column renamed from "username" to "user_id".
+    # Agent must inspect schema and update the SQL query.
+    # -----------------------------------------------------------------------
+    "task_4_db_schema_mismatch": {
+        "id":          "task_4_db_schema_mismatch",
+        "difficulty":  "hard",
+        "description": (
+            "The /user-data endpoint is crashing during database lookups. "
+            "Inspect the SQLite database schema in 'app.db', identify why "
+            "the query in main.py is failing, and fix the column name mismatch."
+        ),
+        "template_files": ["main.py", "app.db"],
+        "success_criteria": {
+            "endpoint":     "/user-data",
+            "method":       "GET",
+            "expected_status": 200,
+        },
+        "max_steps": 25,
+        "reward_shaping": {
+            "schema_read":     0.10,
+            "query_fixed":      0.40,
+            "status_200":       0.49,    # 0.1+0.4+0.49 = 0.99
+        },
+        "hint": "Use 'sqlite3 app.db .schema' to check column names.",
     },
 }
 
