@@ -134,7 +134,37 @@ TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
         },
         "hint": "Use 'sqlite3 app.db .schema' to check column names.",
     },
+
+    # -----------------------------------------------------------------------
+    # Task 5 — MEDIUM
+    # Environment variable leakage. The /env endpoint leaks DB_PASSWORD.
+    # Agent must mask it with '********' in the response.
+    # -----------------------------------------------------------------------
+    "task_5_env_var_leak": {
+        "id":          "task_5_env_var_leak",
+        "difficulty":  "medium",
+        "description": (
+            "The /env endpoint is leaking sensitive configuration. "
+            "Modify main.py to mask the 'DB_PASSWORD' value with '********' "
+            "in the JSON response."
+        ),
+        "template_files": ["main.py"],
+        "success_criteria": {
+            "endpoint":     "/env",
+            "method":       "GET",
+            "expected_json_key": "DB_PASSWORD",
+            "expected_json_value": "********",
+        },
+        "max_steps": 15,
+        "reward_shaping": {
+            "endpoint_checked":  0.10,
+            "mask_applied":      0.40,
+            "status_200":         0.49,
+        },
+        "hint": "Check the /env route and look for where it returns all env variables.",
+    },
 }
+
 
 
 def get_task(task_id: str) -> Dict[str, Any]:

@@ -54,4 +54,16 @@ GET /health has a SyntaxError (JIRA-4891).
 (TEMPLATES / "main.py").write_text(MAIN_PY)
 (TEMPLATES / "README.txt").write_text(README_TXT)
 
-print(f"✓ Templates written to {TEMPLATES}")
+# Create app.db for Task 4
+import sqlite3
+db_path = TEMPLATES / "app.db"
+if db_path.exists():
+    db_path.unlink()
+conn = sqlite3.connect(db_path)
+curr = conn.cursor()
+curr.execute("CREATE TABLE users (user_id INTEGER PRIMARY KEY, name TEXT)")
+curr.execute("INSERT INTO users (user_id, name) VALUES (1, 'Archeologist')")
+conn.commit()
+conn.close()
+
+print(f"DONE: Templates (including app.db) written to {TEMPLATES}")

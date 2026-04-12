@@ -54,6 +54,11 @@ tasks:
     max_steps: 25
     description: "Inspect SQLite schema for renamed columns and update the FastAPI query accordingly."
 
+  - id: task_5_env_var_leak
+    difficulty: medium
+    max_steps: 15
+    description: "Modify main.py to mask the DB_PASSWORD environment variable in the /env response."
+
 # ── Action space ──────────────────────────────────────────────────────────────
 
 action_space:

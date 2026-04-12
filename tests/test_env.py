@@ -12,7 +12,7 @@ from models import (
     ReadFile, EditCode, RunTest, CallAPI,
     Observation, State, ActionType,
 )
-from grader import Task1Grader, Task2Grader, Task3Grader, Task4Grader
+from grader import Task1Grader, Task2Grader, Task3Grader, Task4Grader, Task5Grader
 from task import TASK_REGISTRY, get_task
 
 
@@ -246,6 +246,27 @@ class TestTask4Grader:
         result = g.grade(s, obs)
         assert result["done"]
         assert result["reward"] == pytest.approx(0.49)
+
+class TestTask5Grader:
+    def _make(self):
+        g = Task5Grader("task_5_env_var_leak")
+        s = State(task_id="task_5_env_var_leak")
+        return g, s
+
+    def test_mask_verification(self):
+        g, s = self._make()
+        obs = Observation(api_response={"DB_PASSWORD": "arch-secret-123"})
+        result = g.grade(s, obs)
+        # 0.01 + 0.10 = 0.11
+        assert result["reward"] == pytest.approx(0.11)
+
+    def test_terminal_success(self):
+        g, s = self._make()
+        obs = Observation(api_response={"DB_PASSWORD": "********"})
+        result = g.grade(s, obs)
+        assert result["done"]
+        # 0.01 participation + 0.10 endpoint checked + 0.48 terminal = 0.59
+        assert result["reward"] == pytest.approx(0.59)
 
 
 

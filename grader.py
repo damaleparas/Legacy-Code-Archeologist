@@ -288,6 +288,51 @@ class Task4Grader(BaseGrader):
 
 
 # ---------------------------------------------------------------------------
+# Task 5 — Env var leak
+# ---------------------------------------------------------------------------
+
+class Task5Grader(BaseGrader):
+    """
+    Reward schedule:
+        +0.01  Participation
+        +0.10  endpoint checked
+        +0.40  mask applied (edit)
+        +0.48  JSON body correct
+        Total: 0.99
+    """
+
+    def grade(self, state: State, obs: Observation) -> Dict[str, Any]:
+        reward  = self._participation_bonus(state)
+        done    = False
+        message = ""
+
+        # Progress: endpoint checked
+        if obs.api_response and "DB_PASSWORD" in obs.api_response and not self._flagged(state, "endpoint_checked"):
+            reward += 0.10
+            self._flag(state, "endpoint_checked")
+            message += " +0.10 endpoint verified."
+
+        # Progress: edit applied
+        if "main.py" in state.files_modified and not self._flagged(state, "edit_applied"):
+            reward += 0.40
+            self._flag(state, "edit_applied")
+            message += " +0.40 mask implemented."
+
+        # Terminal: success
+        if (
+            obs.api_response
+            and obs.api_response.get("DB_PASSWORD") == "********"
+            and not self._flagged(state, "task_done")
+        ):
+            reward += 0.48
+            done    = True
+            self._flag(state, "task_done")
+            message += " *** TASK COMPLETE ***"
+
+        return {"reward": reward, "done": done, "message": message.strip()}
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -296,6 +341,7 @@ _GRADER_MAP = {
     "task_2_auth_header":       Task2Grader,
     "task_3_perf_optimization": Task3Grader,
     "task_4_db_schema_mismatch": Task4Grader,
+    "task_5_env_var_leak":       Task5Grader,
 }
 
 
