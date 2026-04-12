@@ -153,6 +153,11 @@ def get_model_action_json(client: OpenAI, step: int, obs: dict, last_reward: flo
 
 
 async def main() -> None:
+    # Diagnostic: show all available tasks inherited from env.py metadata
+    if LegacyCodeArcheologistEnv and hasattr(LegacyCodeArcheologistEnv, "metadata"):
+        tasks = LegacyCodeArcheologistEnv.metadata.get("tasks", [])
+        sys.stderr.write(f"Available tasks: {', '.join(tasks)}\n")
+    
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
     
     history: List[str] = []
