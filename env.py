@@ -61,13 +61,16 @@ class LegacyCodeEnv:
     """
 
     metadata = {
-        "name":    "legacy_code_archeologist",
-        "version": "1.0.0",
-        "tasks":   [
-            {"id": task_id, "has_grader": True} 
-            for task_id in TASK_REGISTRY.keys()
-        ],
-        "max_steps": 30,
+            "name": "legacy_code_archeologist",
+            "version": "1.0.0",
+            "tasks": [
+            {"id": "task_1_syntax_error",      "grader": {"type": "deterministic", "entry": "grader.Task1Grader"}},
+            {"id": "task_2_auth_header",        "grader": {"type": "deterministic", "entry": "grader.Task2Grader"}},
+            {"id": "task_3_perf_optimization",  "grader": {"type": "deterministic", "entry": "grader.Task3Grader"}},
+            {"id": "task_4_db_schema_mismatch", "grader": {"type": "deterministic", "entry": "grader.Task4Grader"}},
+            {"id": "task_5_env_var_leak",       "grader": {"type": "deterministic", "entry": "grader.Task5Grader"}},
+            ],
+            "max_steps": 30,
     }
 
     def __init__(self, task_id: str = "task_1_syntax_error", seed: int = 42):
