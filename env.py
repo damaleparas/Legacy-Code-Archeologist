@@ -63,10 +63,7 @@ class LegacyCodeEnv:
     metadata = {
         "name":    "legacy_code_archeologist",
         "version": "1.0.0",
-        "tasks":   [
-            {"id": task_id, "has_grader": True} 
-            for task_id in TASK_REGISTRY.keys()
-        ],
+        "tasks":   list(TASK_REGISTRY.keys()),
         "max_steps": 30,
     }
 
